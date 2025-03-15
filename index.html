@@ -151,6 +151,19 @@ document.getElementById("clear-all").addEventListener("click", () => {
   location.reload();
 });
 
+// Handle form submission
+function handleSubmit(event, lat, lng, markerId) {
+  event.preventDefault();
+  
+  const form = event.target;
+  const name = form.querySelector(".name").value;
+  const icao = form.querySelector(".icao").value;
+  const navaid = form.querySelector(".navaid").value;
+
+  removeMarker(lat, lng, markerId, false);
+  addMarker(lat, lng, name, icao, navaid, true);
+}
+
 map.on("click", e => addMarker(e.latlng.lat, e.latlng.lng));
 </script>
 
