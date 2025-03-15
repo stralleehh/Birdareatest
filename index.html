@@ -36,6 +36,23 @@ const smallIcon = L.icon({
   popupAnchor: [1, -24]
 });
 
+// Correct airport locations (ICAO, lat, lng)
+const airportDatabase = {
+  "BGSF": { lat: 67.012, lng: -50.719 }, // Kangerlussuaq
+  "BGGH": { lat: 64.190, lng: -51.678 }, // Nuuk
+  "BGJN": { lat: 69.243, lng: -51.057 }, // Ilulissat
+  "BGBW": { lat: 61.160, lng: -45.426 }, // Narsarsuaq
+  "BGKK": { lat: 65.573, lng: -37.123 }, // Kulusuk
+  "BGTL": { lat: 76.531, lng: -68.703 }, // Thule
+  "BGAA": { lat: 68.721, lng: -52.784 }, // Aasiaat
+  "BGSS": { lat: 66.951, lng: -53.729 }, // Sisimiut
+  "BGQQ": { lat: 77.489, lng: -69.332 }, // Qaanaaq
+  "BGMV": { lat: 72.237, lng: -23.933 }, // Mestersvig
+  "BGNO": { lat: 81.601, lng: -16.670 }, // Station Nord
+  "BGUK": { lat: 72.790, lng: -56.130 }, // Upernavik
+  "CYLT": { lat: 82.5178, lng: -62.2813 }  // Alert Airport, Canada
+};
+
 // Load saved markers from local storage
 let savedMarkers = JSON.parse(localStorage.getItem("greenlandMarkers")) || [];
 savedMarkers.forEach(markerData => {
@@ -47,15 +64,17 @@ function addMarker(lat, lng, name = "", icao = "", navaid = "", save = true) {
   const marker = L.marker([lat, lng], { icon: smallIcon, draggable: true }).addTo(map);
 
   function updatePopup() {
+    let statusMessage = getAccuracyMessage(lat, lng, icao);
+    
     marker.bindPopup(`
       <form onsubmit="handleSubmit(event, ${lat}, ${lng}, ${marker._leaflet_id})">
         <label>Airport Name:</label>
         <input type="text" class="popup-input name" value="${name}" />
         <label>ICAO Code:</label>
-        <input type="text" class="popup-input icao" value="${icao}" />
+        <input type="text" class="popup-input icao" value="${icao}" oninput="updateAccuracy(this, ${lat}, ${lng})" />
         <label>NAVAID Info:</label>
         <input type="text" class="popup-input navaid" value="${navaid}" />
-        <br>
+        <div id="accuracy-${lat}-${lng}">${statusMessage}</div>
         <button type="submit" class="btn">Submit</button>
         <button type="button" class="btn" onclick="removeMarker(${lat}, ${lng}, ${marker._leaflet_id})">Remove</button>
       </form>
@@ -66,7 +85,7 @@ function addMarker(lat, lng, name = "", icao = "", navaid = "", save = true) {
   
   marker.on("dragend", function () {
     let newLatLng = marker.getLatLng();
-    removeMarker(lat, lng, marker._leaflet_id, false); 
+    removeMarker(lat, lng, marker._leaflet_id, false);
     addMarker(newLatLng.lat, newLatLng.lng, name, icao, navaid, true);
   });
 
@@ -74,28 +93,36 @@ function addMarker(lat, lng, name = "", icao = "", navaid = "", save = true) {
   if (save) saveMarker(lat, lng, name, icao, navaid);
 }
 
-// Handle form submission
-function handleSubmit(event, lat, lng, markerId) {
-  event.preventDefault();
-  const form = event.target;
-  const name = form.querySelector(".name").value;
-  const icao = form.querySelector(".icao").value;
-  const navaid = form.querySelector(".navaid").value;
-
-  // Save marker
-  saveMarker(lat, lng, name, icao, navaid);
-
-  // Close the popup
-  map.eachLayer(layer => {
-    if (layer._leaflet_id == markerId) {
-      layer.closePopup();
-    }
-  });
-
-  return false;
+// Calculate distance between two points in NM
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 3440.1; // Earth radius in NM
+  const toRad = deg => deg * (Math.PI / 180);
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// Save marker data in local storage
+// Get accuracy message based on ICAO
+function getAccuracyMessage(lat, lng, icao) {
+  if (airportDatabase[icao]) {
+    const correct = airportDatabase[icao];
+    const distanceNM = calculateDistance(lat, lng, correct.lat, correct.lng);
+    return distanceNM <= 20 ? 
+      `<span style="color:green;">✅ Correct location (${distanceNM.toFixed(1)} NM)</span>` :
+      `<span style="color:red;">❌ Wrong location (${distanceNM.toFixed(1)} NM away)</span>`;
+  }
+  return `<span style="color:gray;">Unknown ICAO</span>`;
+}
+
+// Update accuracy when ICAO changes
+function updateAccuracy(input, lat, lng) {
+  const accuracyDiv = document.getElementById(`accuracy-${lat}-${lng}`);
+  accuracyDiv.innerHTML = getAccuracyMessage(lat, lng, input.value);
+}
+
+// Save markers
 function saveMarker(lat, lng, name, icao, navaid) {
   let markers = JSON.parse(localStorage.getItem("greenlandMarkers")) || [];
   markers = markers.filter(m => m.lat !== lat || m.lng !== lng);
@@ -103,7 +130,7 @@ function saveMarker(lat, lng, name, icao, navaid) {
   localStorage.setItem("greenlandMarkers", JSON.stringify(markers));
 }
 
-// Remove marker from map and local storage
+// Remove marker
 function removeMarker(lat, lng, markerId, reload = true) {
   let markers = JSON.parse(localStorage.getItem("greenlandMarkers")) || [];
   markers = markers.filter(m => m.lat !== lat || m.lng !== lng);
@@ -119,18 +146,12 @@ function removeMarker(lat, lng, markerId, reload = true) {
 }
 
 // Clear all markers
-function clearAllMarkers() {
+document.getElementById("clear-all").addEventListener("click", () => {
   localStorage.removeItem("greenlandMarkers");
   location.reload();
-}
-
-// Add marker on map click
-map.on("click", function (e) {
-  addMarker(e.latlng.lat, e.latlng.lng);
 });
 
-// Event listener for "Clear All Markers"
-document.getElementById("clear-all").addEventListener("click", clearAllMarkers);
+map.on("click", e => addMarker(e.latlng.lat, e.latlng.lng));
 </script>
 
 </body>
