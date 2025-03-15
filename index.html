@@ -162,6 +162,13 @@ function handleSubmit(event, lat, lng, markerId) {
 
   removeMarker(lat, lng, markerId, false);
   addMarker(lat, lng, name, icao, navaid, true);
+
+  // Close the popup after submission
+  map.eachLayer(layer => {
+    if (layer._leaflet_id === markerId) {
+      layer.closePopup();
+    }
+  });
 }
 
 map.on("click", e => addMarker(e.latlng.lat, e.latlng.lng));
